@@ -4,17 +4,161 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>PC Architect</title>
+    
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@telegram-apps/telegram-ui@2.1.20/dist/index.css">
-    <link rel="stylesheet" href="style.css">
+    
+    <style>
+        body { 
+            margin: 0; padding: 0; 
+            background-color: var(--tg-theme-bg-color, #0c121a); 
+            color: var(--tg-theme-text-color, #ffffff);
+            font-family: -apple-system, system-ui, sans-serif;
+            overflow: hidden;
+        }
+        #root { height: 100vh; }
+        .mining-rig {
+            width: 160px; height: 160px; margin: 30px auto;
+            background: var(--tg-theme-secondary-bg-color, #1c252f);
+            border-radius: 42px; display: flex; align-items: center; justify-content: center;
+            font-size: 75px; cursor: pointer; transition: transform 0.05s;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .mining-rig:active { transform: scale(0.94); }
+    </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="text/babel" src="app.js"></script>
+
+    <script type="module">
+        // We import React and the UI Library from the most stable CDN
+        import React, { useState, useEffect, createElement } from 'https://esm.sh/react@18.2.0';
+        import ReactDOM from 'https://esm.sh/react-dom@18.2.0';
+        import * as TelegramUI from 'https://esm.sh/@telegram-apps/telegram-ui@2.1.20?bundle';
+
+        // Destructure the official components
+        const { AppRoot, Tabbar, List, Section, Cell, Button, LargeTitle, Text, Progress, Subheadline } = TelegramUI;
+
+        function App() {
+            const [tab, setTab] = useState('mine');
+            const [cash, setCash] = useState(100.00); 
+            const [income, setIncome] = useState(0);
+            const [hp, setHp] = useState(100);
+            const [inv, setInv] = useState([]);
+            const [specs, setSpecs] = useState({ ram: '0 MB', cpu: '0.0 GHz' });
+
+            const tg = window.Telegram.WebApp;
+
+            useEffect(() => {
+                tg.ready(); tg.expand();
+                const saved = localStorage.getItem('pc_miner_vFinal');
+                if (saved) {
+                    const d = JSON.parse(saved);
+                    setCash(d.cash); setIncome(d.income); setInv(d.inv);
+                    setSpecs(d.specs); setHp(d.hp || 100);
+                }
+            }, []);
+
+            // Mining Loop (Only runs while app is active)
+            useEffect(() => {
+                const ticker = setInterval(() => {
+                    if (income > 0) setCash(c => c + income / 10);
+                }, 100);
+                localStorage.setItem('pc_miner_vFinal', JSON.stringify({ cash, income, inv, specs, hp }));
+                return () => clearInterval(ticker);
+            }, [cash, income]);
+
+            const hasPC = inv.includes('pc_90s');
+
+            const handleMine = () => {
+                if(!hasPC) return tg.showPopup({message: "Buy a system in the Shop first!"});
+                setCash(c => c + 0.15);
+                tg.HapticFeedback.impactOccurred('medium');
+            };
+
+            const buy = (id, cost, gain, r, c) => {
+                if (cash >= cost && !inv.includes(id)) {
+                    setCash(cash - cost);
+                    setIncome(income + gain);
+                    setInv([...inv, id]);
+                    setSpecs({ ram: r, cpu: c });
+                    tg.HapticFeedback.notificationOccurred('success');
+                }
+            };
+
+            return createElement(AppRoot, null, [
+                createElement('div', { key: 'content', style: { height: '100%', overflowY: 'auto', paddingBottom: '110px' } }, [
+                    
+                    tab === 'mine' && createElement(List, { key: 'mining-list' }, [
+                        createElement('div', { key: 'bal', style: { padding: '40px 20px', textAlign: 'center' } }, [
+                            createElement(Subheadline, { style: { color: 'var(--tg-theme-hint-color)' } }, "RIG WALLET"),
+                            createElement(LargeTitle, { style: { fontSize: '52px', margin: '10px 0', fontWeight: '800' } }, 
+                                `$${cash.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                            ),
+                            createElement(Text, { style: { color: '#0088cc', fontWeight: 'bold' } }, `+$${income.toFixed(2)} / SEC`),
+                            
+                            createElement('div', { style: { padding: '0 40px', marginTop: '20px' } }, [
+                                createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '5px', fontWeight: 'bold' } }, [
+                                    createElement('span', null, "SYSTEM STABILITY"),
+                                    createElement('span', null, `${hp}%`)
+                                ]),
+                                createElement(Progress, { value: hp })
+                            ])
+                        ]),
+
+                        createElement('div', { key: 'clicker', className: 'mining-rig', onClick: handleMine }, hasPC ? "⛏️" : "🚫"),
+
+                        createElement(Section, { key: 'stats', header: "Hardware Specifications" }, [
+                            createElement(Cell, { subtitle: "CPU Speed" }, specs.cpu),
+                            createElement(Cell, { subtitle: "System Memory" }, specs.ram)
+                        ])
+                    ]),
+
+                    tab === 'shop' && createElement(Section, { key: 'shop-list', header: "Hardware Marketplace" }, [
+                        createElement(Cell, {
+                            key: 'pc1',
+                            before: createElement('span', { style: { fontSize: '32px' } }, '🖥️'),
+                            subtitle: "+$0.25/s | 64MB RAM",
+                            after: createElement(Button, { 
+                                size: 's', 
+                                mode: inv.includes('pc_90s') ? 'gray' : 'filled',
+                                onClick: () => buy('pc_90s', 100, 0.25, '64 MB', '0.2 GHz')
+                            }, inv.includes('pc_90s') ? 'OWNED' : '$100.00')
+                        }, "Used 90's Workstation"),
+                        createElement(Cell, {
+                            key: 'gpu1',
+                            before: createElement('span', { style: { fontSize: '32px' } }, '🕹️'),
+                            subtitle: "+$4.50/s | 512MB RAM",
+                            after: createElement(Button, { 
+                                size: 's', 
+                                disabled: !hasPC,
+                                onClick: () => buy('voodoo', 450, 4.50, '512 MB', '1.1 GHz')
+                            }, "$450.00")
+                        }, "Voodoo Graphics")
+                    ])
+                ]),
+
+                createElement(Tabbar, { key: 'nav', style: { background: 'var(--tg-theme-bg-color)', borderTop: '0.5px solid rgba(255,255,255,0.1)' } }, [
+                    createElement(Tabbar.Item, { key: 't1', selected: tab === 'mine', onClick: () => setTab('mine'), text: "Rig" }, 
+                        createElement('span', { style: { fontSize: '22px' } }, '⛏️')
+                    ),
+                    createElement(Tabbar.Item, { key: 't2', selected: tab === 'shop', onClick: () => setTab('shop'), text: "Shop" }, 
+                        createElement('span', { style: { fontSize: '22px' } }, '🛒')
+                    ),
+                    createElement(Tabbar.Item, { key: 't3', selected: tab === 'rank', onClick: () => setTab('rank'), text: "Rank" }, 
+                        createElement('span', { style: { fontSize: '22px' } }, '🏆')
+                    )
+                ])
+            ]);
+        }
+
+        try {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(createElement(App));
+        } catch (e) {
+            alert("App Crash: " + e.message);
+        }
+    </script>
 </body>
 </html>
